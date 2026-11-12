@@ -6,6 +6,13 @@ requires = [
     "meson>=1.0.0",
     "meson-python>=0.14.0",
 ]
+# Python packages whose headers and libraries the extension is compiled and
+# linked against; when cross compiling these must be built for the host platform.
+host-requires = [
+    "pyarrow>=18,<25",
+    "numpy>=2",
+    "pybind11",
+]
 build-backend = "mesonpy"
 
 [project]

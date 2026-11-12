@@ -20,6 +20,9 @@ if target_machine.system() == 'windows'
 endif
 simdutf = dependency('simdutf')
 arrow = dependency('arrow')
+# Header-only; found through pybind11-config natively and through the
+# pybind11.pc shipped in the wheel when cross compiling.
+pybind11 = dependency('pybind11')
 build_testing = get_option('build_testing')
 if build_testing
   gtest = dependency('gtest')
@@ -46,7 +49,15 @@ py = import('python').find_installation()
 #   numpy-include-dir = /abspath/to/host-pythons/site-packages/numpy/core/include
 #
 # This uses the path as is, and avoids running the interpreter.
+#
+# When the build is driven through the cross_build_wheel hook, meson-python
+# provides the directory where the host requirements (numpy, pyarrow) were
+# installed as the 'host_requires_directory' property instead.
+host_requires_dir = meson.get_external_property('host_requires_directory', 'not-given')
 incdir_numpy = meson.get_external_property('numpy-include-dir', 'not-given')
+if incdir_numpy == 'not-given' and host_requires_dir != 'not-given'
+  incdir_numpy = host_requires_dir / 'numpy' / '_core' / 'include'
+endif
 if incdir_numpy == 'not-given'
   incdir_numpy = run_command(py,
     [
@@ -79,6 +90,9 @@ numpy_nodepr_api = ['-DNPY_NO_DEPRECATED_API=NPY_1_21_API_VERSION']
 np_dep = declare_dependency(include_directories: inc_np, compile_args: numpy_nodepr_api)
 
 incdir_pyarrow = meson.get_external_property('pyarrow-include-dir', 'not-given')
+if incdir_pyarrow == 'not-given' and host_requires_dir != 'not-given'
+  incdir_pyarrow = host_requires_dir / 'pyarrow' / 'include'
+endif
 if incdir_pyarrow == 'not-given'
   incdir_pyarrow = run_command(py,
     [
@@ -135,12 +149,17 @@ inc_pa = include_directories(incdir_pyarrow)
 pa_dep = declare_dependency(include_directories: inc_pa)
 arrow_python = cpp.find_library('arrow_python', dirs: [fs.parent(_incdir_pyarrow_abs)])
 
-deps = [np_dep, pa_dep, arrow, arrow_python, simdutf]
+deps = [np_dep, pa_dep, arrow, arrow_python, simdutf, pybind11]
 if target_machine.system() == 'windows'
   odbc32 = cpp.find_library('odbc32')
   deps += odbc32
 else
-  unixodbc = cpp.find_library('odbc')
+  # Prefer pkg-config, which also works when cross compiling against a sysroot;
+  # fall back to the compiler's search path.
+  unixodbc = dependency('odbc', required: false)
+  if not unixodbc.found()
+    unixodbc = cpp.find_library('odbc')
+  endif
   deps += unixodbc
 endif
 
